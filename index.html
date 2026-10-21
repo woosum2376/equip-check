@@ -330,8 +330,28 @@ function showDone(out){
     el('p',{class:'meta',style:'margin:0'}, out.at + ' · 점검자 ' + S.by),
     el('div',{class:'sheet',style:'padding:0;border-radius:0'}, el('div',{class:'sum'}, el('div',{}, el('b',{style:'color:var(--ok)'}, out.ok), el('span',{}, '있음')), el('div',{}, el('b',{style:'color:var(--fix)'}, out.fix), el('span',{}, '수리 필요')), el('div',{}, el('b',{style:'color:var(--bad)'}, out.miss), el('span',{}, '없음')), el('div',{}, el('b',{}, out.todo), el('span',{}, '미점검')))),
     out.issues && out.issues.length ? el('div',{style:'text-align:left;font-size:14px'}, el('b',{}, '수리·없음 기자재'), el('div',{class:'meta'}, out.issues.join(', '))) : el('p',{style:'margin:0'}, '수리가 필요하거나 없는 기자재는 없어요.'),
-    el('p',{class:'meta',style:'margin:0'}, '결과는 학교 점검표에 저장되었어요. 이 창은 닫으셔도 돼요.'),
-    Object.assign(el('button',{class:'btn'}, '점검 화면으로 돌아가기'), {onclick: () => { S.askedAll = true; render(); }})));
+    el('p',{class:'meta',style:'margin:0'}, '결과는 학교 점검표에 저장되었어요.'),
+    nextRooms(),
+    Object.assign(el('button',{class:'btn'}, '이 실습실 다시 보기'), {onclick: () => { S.askedAll = true; render(); }})));
+}
+// 완료 화면에서 다음 실습실로 바로 이동
+function nextRooms(){
+  if (!S.rooms || S.rooms.length < 2) return el('p',{class:'meta',style:'margin:0'}, '이 창은 닫으셔도 돼요.');
+  const cur = S.rooms.find(r => r.code === BOOT.r); if (cur) { cur.done = true; cur.checked = counts().done; }
+  const others = S.rooms.filter(r => r.code !== BOOT.r), next = others.find(r => !r.done);
+  const box = el('div',{style:'display:flex;flex-direction:column;gap:8px;text-align:left'});
+  if (next) box.append(el('b',{style:'font-size:15px'}, '다음 실습실로 이동'));
+  else box.append(el('p',{style:'margin:0;font-weight:600;color:var(--ok)'}, '🎉 모든 실습실 점검을 완료했어요! 이 창은 닫으셔도 돼요.'));
+  others.forEach(r => {
+    const label = r.name + (r.done ? '  ✅ 완료' : '  ' + r.checked + '/' + r.total);
+    const b = el('button',{class: r === next ? 'btn primary' : 'btn', style:'text-align:left'}, (r === next ? '▶ ' : '') + label);
+    b.onclick = async () => { b.disabled = true; b.textContent = r.name + ' 여는 중…';
+      try { app.replaceChildren(el('div',{class:'gate'}, el('p',{}, '불러오는 중…'))); BOOT.r = r.code; BOOT.k = r.key;
+        try { history.replaceState(null, '', location.pathname + '?r=' + encodeURIComponent(r.code) + '&k=' + r.key); } catch(e){}
+        S.filter = 'all'; S.room = await call('getRoom', BOOT.r, BOOT.k, S.pin, S.by); S.askedAll = undefined; render(); roomBar(); window.scrollTo({top:0}); }
+      catch(e){ toastMsg(msg(e)); location.reload(); } };
+    box.append(b); });
+  return box;
 }
 
 function drawList(){
