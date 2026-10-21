@@ -63,6 +63,12 @@ input.t{border:1px solid var(--line);background:#fff;border-radius:10px;padding:
 .donecard{background:#fff;border:2px solid var(--ok);border-radius:14px;padding:22px 18px;text-align:center;display:flex;flex-direction:column;gap:10px;margin-top:20px}
 .donecard .big{font-size:44px;line-height:1}
 .donecard h1{margin:0;font-size:21px}
+.roombar{display:flex;gap:6px;margin:0 0 8px;overflow-x:auto}
+.roombar[hidden]{display:none}
+.roombar button{flex:1;min-width:0;border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 6px;font-size:13px;font-weight:600;white-space:nowrap}
+.roombar button small{font-weight:500;color:var(--muted);font-size:11px}
+.roombar button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.roombar button[aria-pressed="true"] small{color:#dde8f3}
 .legend{display:flex;gap:10px;font-size:12px;color:var(--muted);margin-top:4px;flex-wrap:wrap}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:3px;vertical-align:-1px}
 .list .item.flash{box-shadow:0 0 0 3px var(--accent)}
@@ -109,6 +115,9 @@ const S = {room:null, pin:'', by:'', filter:'all'};
 const $ = s => document.querySelector(s);
 const app = $('#app');
 const ls = {get(k){try{return localStorage.getItem(k)||''}catch(e){return ''}}, set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+const AUTH = { get(){ try { const a = JSON.parse(localStorage.getItem('insp-auth') || 'null'); return a && a.exp > Date.now() ? a : null; } catch(e){ return null; } },
+  set(by, pin){ try { localStorage.setItem('insp-auth', JSON.stringify({by, pin, exp: Date.now() + 12*3600*1000})); } catch(e){} },
+  clear(){ try { localStorage.removeItem('insp-auth'); } catch(e){} } };
 const gsr = (fn, ...a) => new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(e => rej(e && e.message ? e : new Error(String(e))))[fn](...a));
 let useFetch = !!BOOT.api;
 // 로그인 정보 없이 바로 서버에 요청 → 구글 계정이 여러 개 로그인돼 있어도 오류가 나지 않음. 안 되면 기존 방식으로.
@@ -134,18 +143,43 @@ async function call(fn, ...a){
 const el = (tag, attrs, ...kids) => { const n = document.createElement(tag); for (const k in attrs||{}) { if (k === 'class') n.className = attrs[k]; else if (k.startsWith('on')) n[k] = attrs[k]; else n.setAttribute(k, attrs[k]); } kids.flat().forEach(c => n.append(c == null ? '' : c)); return n; };
 const msg = e => String((e && e.message) || e).replace(/^Exception:\s*/, '');
 
+async function enter(){
+  S.room = await call('getRoom', BOOT.r, BOOT.k, S.pin, S.by);
+  S.askedAll = undefined; render();
+  call('rooms', BOOT.r, BOOT.k, S.pin, S.by).then(list => { S.rooms = list; roomBar(); }).catch(() => {});
+}
+function roomBar(){
+  const bar = document.getElementById('roombar'); if (!bar || !S.rooms || S.rooms.length < 2) return;
+  const c = counts();
+  bar.replaceChildren(...S.rooms.map(r => {
+    const cur = r.code === BOOT.r, n = cur ? c.done : r.checked, t = cur ? c.n : r.total;
+    const b = el('button',{'aria-pressed':String(cur)}, r.name.replace(/(체험)?실습실$/, ''), el('small',{}, (r.done ? ' ✅' : ' ') + n + '/' + t));
+    b.onclick = () => { if (!cur) switchRoom(r); }; return b; }));
+  bar.hidden = false;
+}
+async function switchRoom(r){
+  const bar = document.getElementById('roombar'); bar.querySelectorAll('button').forEach(b => b.disabled = true);
+  await waitSaved();
+  const cur = S.rooms.find(x => x.code === BOOT.r); if (cur) { const c = counts(); cur.checked = c.done; }
+  BOOT.r = r.code; BOOT.k = r.key;
+  try { history.replaceState(null, '', location.pathname + '?r=' + encodeURIComponent(r.code) + '&k=' + r.key); } catch(e){}
+  try { S.filter = 'all'; S.room = await call('getRoom', BOOT.r, BOOT.k, S.pin, S.by); S.askedAll = undefined; render(); roomBar(); window.scrollTo({top:0}); }
+  catch(e){ toastMsg(msg(e)); bar.querySelectorAll('button').forEach(b => b.disabled = false); }
+}
+function toastMsg(t){ const d = el('div',{style:'position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#1b1f1d;color:#fff;padding:9px 14px;border-radius:9px;font-size:14px;z-index:40'}, t); document.body.append(d); setTimeout(() => d.remove(), 2600); }
+function logout(){ AUTH.clear(); location.reload(); }
+
 function gate(info, err){
   app.replaceChildren();
   const pinIn = el('input',{class:'t',type:'password',inputmode:'numeric',autocomplete:'off',placeholder:'담당 선생님께 받은 PIN'});
-  try { pinIn.value = sessionStorage.getItem('insp-pin-'+BOOT.r) || ''; } catch(e){}
   const byIn = el('input',{class:'t',type:'text',maxlength:'30',placeholder:'예: 교육청 홍길동'}); byIn.value = ls.get('insp-by');
   const er = el('div',{class:'err'}, err||'');
   const go = el('button',{class:'btn primary'}, '점검 시작');
   go.onclick = async () => {
     if (!byIn.value.trim()) { er.textContent = '점검자 이름을 적어 주세요.'; return; }
     go.disabled = true; er.textContent = '';
-    try { S.pin = pinIn.value.trim(); S.by = byIn.value.trim(); ls.set('insp-by', S.by); try { sessionStorage.setItem('insp-pin-'+BOOT.r, S.pin); } catch(e){}
-      S.room = await call('getRoom', BOOT.r, BOOT.k, S.pin, S.by); render(); }
+    try { S.pin = pinIn.value.trim(); S.by = byIn.value.trim(); ls.set('insp-by', S.by);
+      await enter(); AUTH.set(S.by, S.pin); }
     catch(e){ er.textContent = msg(e); go.disabled = false; }
   };
   app.append(el('div',{class:'gate'},
@@ -180,6 +214,7 @@ function syncInfo(){
 window.addEventListener('beforeunload', e => { if (Q.order.length) { e.preventDefault(); e.returnValue = ''; } });
 
 function headerUpdate(){
+  if (S.rooms) { const rb = document.getElementById('roombar'); if (rb && !rb.hidden) { const c0 = counts(), b = rb.querySelector('button[aria-pressed="true"] small'); if (b) b.textContent = (S.room.doneAt ? ' ✅' : ' ') + c0.done + '/' + c0.n; } }
   const c = counts(), pct = v => (c.n ? v/c.n*100 : 0) + '%';
   const dt = document.getElementById('donetxt'); if (dt) dt.textContent = c.done === c.n ? '모두 점검했어요. 완료를 눌러 마무리해 주세요.' : '남은 기자재 ' + (c.n - c.done) + '개';
   if (c.n && c.done === c.n && !S.askedAll) { S.askedAll = true; setTimeout(() => askComplete(true), 350); }
@@ -223,6 +258,7 @@ function render(){
   app.replaceChildren();
   // 고정 영역: 제목 + 진행 + 도면 + 필터
   const dock = el('div',{class:'dock'});
+  dock.append(el('div',{class:'roombar',id:'roombar',hidden:''}));
   dock.append(el('div',{class:'hrow'}, el('h1',{}, R.name), el('span',{class:'cnt',id:'cnt'}), el('span',{class:'sync',id:'sync'})),
     el('div',{class:'bar',id:'bar'}, el('span',{style:'background:var(--ok)'}), el('span',{style:'background:var(--fix)'}), el('span',{style:'background:var(--bad)'})));
   const VIEWS = R.plan ? R.plan.views : (R.images || []).map((src,k) => [(R.images.length > 1 ? ['평면도','왼쪽','오른쪽'][k] || ('도면 '+(k+1)) : '도면'), src]);
@@ -255,10 +291,10 @@ function render(){
   dock.append(chips);
   if (R.doneAt) dock.append(el('div',{style:'margin-top:8px;padding:8px 10px;border-radius:9px;background:var(--ok-s);color:var(--ok);font-size:13px;font-weight:600'}, '✅ ' + S.by + ' 님은 ' + R.doneAt + '에 이 실습실 점검을 완료했어요. 고칠 것이 있으면 수정 후 다시 완료를 눌러 주세요.'));
   const doneBtn = el('button',{class:'btn primary',id:'donebtn'}, '점검 완료'); doneBtn.onclick = () => askComplete(false);
-  app.append(dock, el('div',{class:'list',id:'list'}), el('div',{class:'foot'}, (R.school ? R.school + ' · ' : '') + '점검자 ' + S.by + ' · 이 화면의 링크는 외부에 공유하지 말아 주세요.'),
+  app.append(dock, el('div',{class:'list',id:'list'}), el('div',{class:'foot'}, (R.school ? R.school + ' · ' : '') + '점검자 ' + S.by + ' · ', Object.assign(el('a',{href:'#'}, '점검자 바꾸기'), {onclick: ev => { ev.preventDefault(); logout(); }}), ' · 이 화면의 링크는 외부에 공유하지 말아 주세요.'),
     el('div',{class:'donebar'}, el('span',{class:'txt',id:'donetxt'}), doneBtn));
   if (S.askedAll === undefined) { const c0 = counts(); S.askedAll = c0.n > 0 && c0.done === c0.n; }
-  drawList(); headerUpdate(); syncInfo();
+  drawList(); headerUpdate(); syncInfo(); roomBar();
 }
 
 /* ---- 점검 완료 ---- */
@@ -347,7 +383,8 @@ function zoom(src){
   if (!BOOT.r || !BOOT.k) { app.append(el('div',{class:'gate'}, el('h1',{}, 'QR 코드로 들어와 주세요'), el('p',{}, '실습실에 붙은 QR 코드를 휴대폰 카메라로 찍으면 점검 화면이 열려요.'))); return; }
   app.append(el('div',{class:'gate'}, el('p',{}, '불러오는 중…')));
   try { const info = await call('hello', BOOT.r, BOOT.k);
-    if (!info.needPin && ls.get('insp-by')) { S.by = ls.get('insp-by'); }
+    const a = AUTH.get();
+    if (a) { S.by = a.by; S.pin = a.pin; try { await enter(); return; } catch(e){ AUTH.clear(); gate(info, msg(e)); return; } }
     gate(info); }
   catch(e){ app.replaceChildren(el('div',{class:'gate'}, el('h1',{}, '열 수 없어요'), el('p',{}, msg(e)), el('p',{}, '계속 안 되면 휴대폰 브라우저의 시크릿(비밀) 모드에서 QR 주소를 열어 주세요.'))); }
 })();
