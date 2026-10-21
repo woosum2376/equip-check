@@ -145,13 +145,13 @@ function gate(info, err){
     if (!byIn.value.trim()) { er.textContent = '점검자 이름을 적어 주세요.'; return; }
     go.disabled = true; er.textContent = '';
     try { S.pin = pinIn.value.trim(); S.by = byIn.value.trim(); ls.set('insp-by', S.by); try { sessionStorage.setItem('insp-pin-'+BOOT.r, S.pin); } catch(e){}
-      S.room = await call('getRoom', BOOT.r, BOOT.k, S.pin); render(); }
+      S.room = await call('getRoom', BOOT.r, BOOT.k, S.pin, S.by); render(); }
     catch(e){ er.textContent = msg(e); go.disabled = false; }
   };
   app.append(el('div',{class:'gate'},
     el('p',{}, info.school || '기자재 점검'),
     el('h1',{}, info.name + ' 기자재 점검'),
-    el('p',{}, '이 실습실의 기자재 목록과 배치도를 보고, 하나씩 있음·없음을 표시해 주세요. 표시하는 즉시 학교 점검표에 저장돼요.'),
+    el('p',{}, '이 실습실의 기자재 목록과 배치도를 보고, 하나씩 있음·없음을 표시해 주세요. 점검자마다 따로 기록되니 이름을 정확히 적어 주세요. 같은 이름으로 다시 들어오면 이어서 할 수 있어요.'),
     el('label',{class:'f'}, '점검자 이름', byIn),
     info.needPin ? el('label',{class:'f'}, 'PIN', pinIn) : null,
     er, go));
@@ -253,6 +253,7 @@ function render(){
   const chips = el('div',{class:'chips',id:'chips'}, ...['all','todo','issue','ok'].map(k => {
     const b = el('button',{'data-f':k,'aria-pressed':String(S.filter===k)}); b.onclick = () => { S.filter = k; document.querySelectorAll('#chips button').forEach(x => x.setAttribute('aria-pressed', String(x===b))); drawList(); window.scrollTo({top:0}); }; return b; }));
   dock.append(chips);
+  if (R.doneAt) dock.append(el('div',{style:'margin-top:8px;padding:8px 10px;border-radius:9px;background:var(--ok-s);color:var(--ok);font-size:13px;font-weight:600'}, '✅ ' + S.by + ' 님은 ' + R.doneAt + '에 이 실습실 점검을 완료했어요. 고칠 것이 있으면 수정 후 다시 완료를 눌러 주세요.'));
   const doneBtn = el('button',{class:'btn primary',id:'donebtn'}, '점검 완료'); doneBtn.onclick = () => askComplete(false);
   app.append(dock, el('div',{class:'list',id:'list'}), el('div',{class:'foot'}, (R.school ? R.school + ' · ' : '') + '점검자 ' + S.by + ' · 이 화면의 링크는 외부에 공유하지 말아 주세요.'),
     el('div',{class:'donebar'}, el('span',{class:'txt',id:'donetxt'}), doneBtn));
@@ -281,7 +282,7 @@ function askComplete(auto){
     try { await waitSaved(); if (Object.keys(Q.failed).length) throw new Error('저장 못 한 기자재가 있어요. 「다시 시도」 후 완료해 주세요.');
       ok.textContent = '완료 기록 중…';
       const out = await call('complete', BOOT.r, BOOT.k, S.pin, S.by);
-      m.remove(); showDone(out);
+      S.room.doneAt = out.at; m.remove(); showDone(out);
     } catch(e){ er.textContent = msg(e); ok.disabled = false; no.disabled = false; ok.textContent = '다시 시도'; }
   };
 }
