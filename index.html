@@ -99,13 +99,20 @@ let useFetch = !!BOOT.api;
 // 로그인 정보 없이 바로 서버에 요청 → 구글 계정이 여러 개 로그인돼 있어도 오류가 나지 않음. 안 되면 기존 방식으로.
 async function call(fn, ...a){
   if (useFetch) {
-    let r;
-    try {
-      const resp = await fetch(BOOT.api, {method:'POST', credentials:'omit', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({fn, args:a})});
-      r = await resp.json();
-    } catch (e) { throw new Error('서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.'); }
-    if (r && r.ok) return r.data;
-    throw new Error((r && r.error) || '요청을 처리하지 못했어요.');
+    const q = BOOT.api + (BOOT.api.includes('?') ? '&' : '?') + 'fn=' + encodeURIComponent(fn) + '&a=' + encodeURIComponent(JSON.stringify(a)) + '&_=' + Date.now();
+    let r, txt = '', why = '';
+    for (const how of ['get', 'post']) {
+      try {
+        const resp = how === 'get' ? await fetch(q, {method:'GET', credentials:'omit', redirect:'follow'})
+          : await fetch(BOOT.api, {method:'POST', credentials:'omit', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({fn, args:a})});
+        txt = await resp.text();
+        try { r = JSON.parse(txt); break; } catch (e) { why = how + ' ' + resp.status + ' ' + txt.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80); }
+      } catch (e) { why = how + ' ' + (e && e.message || e); }
+    }
+    if (!r) { if (typeof google !== 'undefined' && google.script) { useFetch = false; return gsr(fn, ...a); }
+      throw new Error('서버에 연결하지 못했어요. (' + why + ')'); }
+    if (r.ok) return r.data;
+    throw new Error(r.error || '요청을 처리하지 못했어요.');
   }
   return gsr(fn, ...a);
 }
