@@ -101,7 +101,7 @@ input.t{border:1px solid var(--line);background:#fff;border-radius:10px;padding:
 <body>
 <div class="wrap" id="app"></div>
 <script>
-const API = "https://script.google.com/macros/s/AKfycbzYvULMkZQvg9uuVkoSMIVNUQDNNpS5TFuO-3E_f7SGUxDT5LXgAGCpdkP6skgGO8bDyg/exec";
+const API = "https://script.google.com/macros/s/AKfycbwOog53L6UMP_kVNJbJe9u_JGaJlaD01NceUm9Mg4hyQVvvAZAXZNQEIY1cqtV0m9IX7w/exec";
 const BOOT = (() => { const q = new URLSearchParams(location.search), c = v => String(v || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80); return { r: c(q.get('r')), k: c(q.get('k')), api: API }; })();
 try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
 const ST = {ok:'있음(정상)', fix:'수리 필요', miss:'없음'};
