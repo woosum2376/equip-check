@@ -48,6 +48,21 @@ input.t{border:1px solid var(--line);background:#fff;border-radius:10px;padding:
 .pv svg .item.st-fix .shape{fill:#f6dc9f;stroke:#b7791f;stroke-width:2}
 .pv svg .item.st-miss .shape{fill:#f4b9b1;stroke:#c0392b;stroke-width:2}
 .pv svg .item.hl .shape{stroke:#2f5d8c;stroke-width:3.5}
+.donebar{margin:16px 0 0;padding:14px;background:#fff;border:1px solid var(--line);border-radius:12px;display:flex;gap:10px;align-items:center}
+.donebar .txt{flex:1;font-size:14px;color:var(--muted)}
+.donebar .btn{padding:12px 18px}
+.modal{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:#fff;width:100%;max-width:560px;border-radius:16px 16px 0 0;padding:20px 18px calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:12px}
+.sheet h2{margin:0;font-size:19px}
+.sheet .sum{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
+.sheet .sum div{background:var(--bg);border-radius:10px;padding:8px 2px}
+.sheet .sum b{display:block;font-size:20px}
+.sheet .sum span{font-size:12px;color:var(--muted)}
+.sheet .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sheet .iss{font-size:13px;color:var(--muted);max-height:30vh;overflow:auto}
+.donecard{background:#fff;border:2px solid var(--ok);border-radius:14px;padding:22px 18px;text-align:center;display:flex;flex-direction:column;gap:10px;margin-top:20px}
+.donecard .big{font-size:44px;line-height:1}
+.donecard h1{margin:0;font-size:21px}
 .legend{display:flex;gap:10px;font-size:12px;color:var(--muted);margin-top:4px;flex-wrap:wrap}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:3px;vertical-align:-1px}
 .list .item.flash{box-shadow:0 0 0 3px var(--accent)}
@@ -166,6 +181,8 @@ window.addEventListener('beforeunload', e => { if (Q.order.length) { e.preventDe
 
 function headerUpdate(){
   const c = counts(), pct = v => (c.n ? v/c.n*100 : 0) + '%';
+  const dt = document.getElementById('donetxt'); if (dt) dt.textContent = c.done === c.n ? '모두 점검했어요. 완료를 눌러 마무리해 주세요.' : '남은 기자재 ' + (c.n - c.done) + '개';
+  if (c.n && c.done === c.n && !S.askedAll) { S.askedAll = true; setTimeout(() => askComplete(true), 350); }
   $('#cnt').textContent = c.done + ' / ' + c.n;
   const sp = document.querySelectorAll('#bar span'); sp[0].style.width = pct(c.ok); sp[1].style.width = pct(c.fix); sp[2].style.width = pct(c.miss);
   const labels = {all:'전체 '+c.n, todo:'남은 것 '+(c.n-c.done), issue:'수리·없음 '+(c.fix+c.miss), ok:'정상 '+c.ok};
@@ -236,8 +253,48 @@ function render(){
   const chips = el('div',{class:'chips',id:'chips'}, ...['all','todo','issue','ok'].map(k => {
     const b = el('button',{'data-f':k,'aria-pressed':String(S.filter===k)}); b.onclick = () => { S.filter = k; document.querySelectorAll('#chips button').forEach(x => x.setAttribute('aria-pressed', String(x===b))); drawList(); window.scrollTo({top:0}); }; return b; }));
   dock.append(chips);
-  app.append(dock, el('div',{class:'list',id:'list'}), el('div',{class:'foot'}, (R.school ? R.school + ' · ' : '') + '점검자 ' + S.by + ' · 이 화면의 링크는 외부에 공유하지 말아 주세요.'));
+  const doneBtn = el('button',{class:'btn primary',id:'donebtn'}, '점검 완료'); doneBtn.onclick = () => askComplete(false);
+  app.append(dock, el('div',{class:'list',id:'list'}), el('div',{class:'foot'}, (R.school ? R.school + ' · ' : '') + '점검자 ' + S.by + ' · 이 화면의 링크는 외부에 공유하지 말아 주세요.'),
+    el('div',{class:'donebar'}, el('span',{class:'txt',id:'donetxt'}), doneBtn));
+  if (S.askedAll === undefined) { const c0 = counts(); S.askedAll = c0.n > 0 && c0.done === c0.n; }
   drawList(); headerUpdate(); syncInfo();
+}
+
+/* ---- 점검 완료 ---- */
+function waitSaved(){ return new Promise(res => { const t = () => (Q.order.length || Q.busy) ? setTimeout(t, 200) : res(); t(); }); }
+function askComplete(auto){
+  if (document.querySelector('.modal')) return;
+  const c = counts(), left = c.n - c.done, failed = Object.keys(Q.failed).length;
+  const m = el('div',{class:'modal'}), sh = el('div',{class:'sheet'});
+  const ok = el('button',{class:'btn primary'}, '점검 완료'), no = el('button',{class:'btn'}, auto ? '더 볼게요' : '취소');
+  const er = el('div',{class:'err'});
+  sh.append(el('h2',{}, left ? '아직 ' + left + '개를 점검하지 않았어요' : '점검을 완료하시겠습니까?'),
+    el('div',{class:'sum'}, el('div',{}, el('b',{style:'color:var(--ok)'}, c.ok), el('span',{}, '있음')), el('div',{}, el('b',{style:'color:var(--fix)'}, c.fix), el('span',{}, '수리 필요')), el('div',{}, el('b',{style:'color:var(--bad)'}, c.miss), el('span',{}, '없음')), el('div',{}, el('b',{}, left), el('span',{}, '미점검'))),
+    el('p',{class:'meta',style:'margin:0;color:var(--muted);font-size:14px'}, left ? '점검하지 않은 기자재는 「미점검」으로 기록돼요. 그래도 완료할까요?' : '완료하면 ' + S.room.name + ' 점검이 끝났다고 학교에 기록돼요.'),
+    failed ? el('p',{style:'margin:0;color:var(--bad);font-size:14px'}, '저장 못 한 기자재가 ' + failed + '개 있어요. 목록에서 「다시 시도」를 먼저 눌러 주세요.') : '',
+    er, el('div',{class:'row2'}, no, ok));
+  m.append(sh); document.body.append(m);
+  no.onclick = () => m.remove(); m.onclick = ev => { if (ev.target === m) m.remove(); };
+  if (failed) ok.disabled = true;
+  ok.onclick = async () => {
+    ok.disabled = true; no.disabled = true; ok.textContent = '저장 마무리 중…';
+    try { await waitSaved(); if (Object.keys(Q.failed).length) throw new Error('저장 못 한 기자재가 있어요. 「다시 시도」 후 완료해 주세요.');
+      ok.textContent = '완료 기록 중…';
+      const out = await call('complete', BOOT.r, BOOT.k, S.pin, S.by);
+      m.remove(); showDone(out);
+    } catch(e){ er.textContent = msg(e); ok.disabled = false; no.disabled = false; ok.textContent = '다시 시도'; }
+  };
+}
+function showDone(out){
+  window.scrollTo({top:0});
+  app.replaceChildren(el('div',{class:'donecard'},
+    el('div',{class:'big'}, '✅'),
+    el('h1',{}, S.room.name + ' 점검이 완료되었어요'),
+    el('p',{class:'meta',style:'margin:0'}, out.at + ' · 점검자 ' + S.by),
+    el('div',{class:'sheet',style:'padding:0;border-radius:0'}, el('div',{class:'sum'}, el('div',{}, el('b',{style:'color:var(--ok)'}, out.ok), el('span',{}, '있음')), el('div',{}, el('b',{style:'color:var(--fix)'}, out.fix), el('span',{}, '수리 필요')), el('div',{}, el('b',{style:'color:var(--bad)'}, out.miss), el('span',{}, '없음')), el('div',{}, el('b',{}, out.todo), el('span',{}, '미점검')))),
+    out.issues && out.issues.length ? el('div',{style:'text-align:left;font-size:14px'}, el('b',{}, '수리·없음 기자재'), el('div',{class:'meta'}, out.issues.join(', '))) : el('p',{style:'margin:0'}, '수리가 필요하거나 없는 기자재는 없어요.'),
+    el('p',{class:'meta',style:'margin:0'}, '결과는 학교 점검표에 저장되었어요. 이 창은 닫으셔도 돼요.'),
+    Object.assign(el('button',{class:'btn'}, '점검 화면으로 돌아가기'), {onclick: () => { S.askedAll = true; render(); }})));
 }
 
 function drawList(){
